@@ -32,16 +32,21 @@ jobs:
         run: git diff --exit-code catalog.json || (echo "::error::catalog.json is stale. Run 'npm run catalog' and commit it." && exit 1)
 
   verify:
-    name: next / ${{ matrix.combo }} (node ${{ matrix.node }})
+    name: ${{ matrix.framework }} / ${{ matrix.combo }} (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        framework: [next, node]
         combo: [base, gemini, payments, payments-spending, full]
         node: [22]
         include:
           # Oldest supported Node, on the combination that exercises everything.
-          - combo: full
+          - framework: next
+            combo: full
+            node: 20
+          - framework: node
+            combo: full
             node: 20
     steps:
       - uses: actions/checkout@v7
@@ -53,7 +58,7 @@ jobs:
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('templates/**/manifest.json', 'templates/**/package.json') }}
-      - run: npm run verify -- ${{ matrix.combo }}
+      - run: npm run verify -- ${{ matrix.framework }}-${{ matrix.combo }}
 
   facilitator:
     name: x402.org facilitator still supports Solana devnet

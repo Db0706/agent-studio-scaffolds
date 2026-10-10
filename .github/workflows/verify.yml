@@ -32,15 +32,18 @@ jobs:
         run: git diff --exit-code catalog.json || (echo "::error::catalog.json is stale. Run 'npm run catalog' and commit it." && exit 1)
 
   verify:
-    name: ${{ matrix.framework }} / ${{ matrix.combo }} (node ${{ matrix.node }})
+    name: ${{ matrix.framework }} / ${{ matrix.combo }} (node ${{ matrix.node }}${{ matrix.python && format(', python {0}', matrix.python) || '' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        framework: [next, node, expo]
+        framework: [next, node, python, expo]
         combo: [base, gemini, payments, payments-spending, full]
         node: [22]
         include:
+          # Python combinations run on 3.12; the oldest supported Python (3.10) runs `full` below.
+          - framework: python
+            python: "3.12"
           # Oldest supported Node, on the combination that exercises everything.
           - framework: next
             combo: full
@@ -51,17 +54,33 @@ jobs:
           - framework: expo
             combo: full
             node: 20
+          # Oldest Python and oldest Node together (a distinct `node` value makes this a new job
+          # instead of overriding python/full on 3.12).
+          - framework: python
+            combo: full
+            node: 20
+            python: "3.10"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - name: Cache npm downloads
+        if: matrix.framework != 'python'
         uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('templates/**/manifest.json', 'templates/**/package.json') }}
+      - uses: actions/setup-python@v7
+        if: matrix.framework == 'python'
+        id: python
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: templates/python/**/manifest.json
       - run: npm run verify -- ${{ matrix.framework }}-${{ matrix.combo }}
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path || 'python3' }}
 
   facilitator:
     name: x402.org facilitator still supports Solana devnet

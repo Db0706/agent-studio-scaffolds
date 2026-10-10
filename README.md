@@ -47,6 +47,8 @@ npm run catalog    # regenerates catalog.json (listTemplates)
 npm run verify     # whole matrix; or: npm run verify -- full
 ```
 
+CI (`.github/workflows/verify.yml`) runs the same matrix on every push, every PR, and every Monday. It also tests `full` on Node 20, checks `catalog.json` is up to date, and checks that the x402.org facilitator still supports Solana devnet.
+
 Composition rules:
 
 - Modules only **add** files. If two layers provide the same path, composition fails.

@@ -1,0 +1,65 @@
+name: verify
+
+# Composes every template combination and checks it installs, typechecks, builds and passes its tests.
+# Runs weekly too, so a broken upstream (npm registry, x402 facilitator) shows up here before students hit it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  catalog:
+    name: catalog.json is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm run catalog
+      - name: Fail if catalog.json changed
+        run: git diff --exit-code catalog.json || (echo "::error::catalog.json is stale. Run 'npm run catalog' and commit it." && exit 1)
+
+  verify:
+    name: next / ${{ matrix.combo }} (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: [base, gemini, payments, payments-spending, full]
+        node: [22]
+        include:
+          # Oldest supported Node, on the combination that exercises everything.
+          - combo: full
+            node: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Cache npm downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('templates/**/manifest.json', 'templates/**/package.json') }}
+      - run: npm run verify -- ${{ matrix.combo }}
+
+  facilitator:
+    name: x402.org facilitator still supports Solana devnet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check /supported
+        run: |
+          curl -fsS --retry 3 https://x402.org/facilitator/supported -o supported.json
+          jq -e '.kinds[] | select(.x402Version == 2 and .scheme == "exact" and .network == "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1") | .extra.feePayer' supported.json

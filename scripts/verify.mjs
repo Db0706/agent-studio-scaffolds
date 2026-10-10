@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Composes every supported combination and checks it installs, typechecks, builds and passes its tests.
-// Node services are also started from their build output and probed over HTTP (offline: no keys, no facilitator).
-// Needs network access (npm registry) but no API keys or wallets.
+// Node services and python agents are also started and probed over HTTP (offline: no keys, no facilitator).
+// Needs network access (npm registry, PyPI) but no API keys or wallets.
+// Python combinations use $PYTHON (default python3), which must be 3.10 or newer.
 //
-//   npm run verify                 # whole matrix (next + node)
+//   npm run verify                 # whole matrix (next + node + python)
 //   npm run verify -- node         # one framework
 //   npm run verify -- full         # one combination, every framework
 //   npm run verify -- node-full    # one combination, one framework
@@ -11,7 +12,7 @@
 import { execSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { compose } from "./compose.mjs";
 
 const COMBOS = {
@@ -21,7 +22,7 @@ const COMBOS = {
   "payments-spending": ["payments", "spending"],
   full: ["gemini", "payments", "spending", "paidapi"],
 };
-const MATRIX = ["next", "node"].flatMap((framework) =>
+const MATRIX = ["next", "node", "python"].flatMap((framework) =>
   Object.entries(COMBOS).map(([combo, modules]) => ({ framework, combo, name: `${framework}-${combo}`, modules })),
 );
 
@@ -42,6 +43,11 @@ for (const { framework, combo, name, modules } of MATRIX) {
       execSync(cmd, { cwd: out, stdio: "inherit", env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } });
       steps.push(label);
     };
+    if (framework === "python") {
+      await verifyPython(out, manifest, run, steps);
+      results.push({ name, ok: true, steps });
+      continue;
+    }
     run("install", "npm install --no-audit --no-fund");
     run("typecheck", "npm run typecheck");
     run("build", "npm run build");
@@ -60,7 +66,7 @@ for (const { framework, combo, name, modules } of MATRIX) {
 
 console.log("\n=== Summary");
 for (const r of results) {
-  console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name.padEnd(23)} ${r.steps.join(" → ")}${r.ok ? "" : `  (${r.error})`}`);
+  console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name.padEnd(25)} ${r.steps.join(" → ")}${r.ok ? "" : `  (${r.error})`}`);
 }
 if (!results.length) {
   console.error(`No combination matches ${only.join(" ")}. Known: ${MATRIX.map((m) => m.name).join(", ")}`);
@@ -68,12 +74,39 @@ if (!results.length) {
 }
 if (results.some((r) => !r.ok)) process.exit(1);
 
+/**
+ * Python: venv → pip install (requirements-dev.txt pulls in requirements.txt) → compileall + pyright
+ * → unittest → `python -m agent` runs → HTTP smoke test of `python -m agent serve`.
+ */
+async function verifyPython(out, manifest, run, steps) {
+  const python = process.env.PYTHON || "python3";
+  const version = execSync(`${python} -c "import sys; print('%d.%d' % sys.version_info[:2])"`).toString().trim();
+  const [major, minor] = version.split(".").map(Number);
+  if (major < 3 || (major === 3 && minor < 10)) throw new Error(`${python} is Python ${version}; set PYTHON to Python 3.10 or newer`);
+  const venvPython = join(out, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const py = (args) => `"${resolve(venvPython)}" ${args}`;
+  run("venv", `${python} -m venv .venv`);
+  run("install", py("-m pip install --disable-pip-version-check -q -r requirements-dev.txt"));
+  run("compile", py("-m compileall -q agent tests"));
+  run("typecheck", py("-m pyright"));
+  run("test", py(manifest.scripts.test.replace(/^python /, "")));
+  run("cli", py("-m agent"));
+  if (existsSync(join(out, ".env"))) throw new Error(".env must never be generated");
+  await smokeHttp(out, manifest, resolve(venvPython), ["-m", "agent", "serve"]);
+  steps.push("smoke");
+}
+
 /** Starts `node dist/server.js` without any keys and checks each module's endpoints answer as documented. */
 async function smokeNode(dir, manifest) {
+  return smokeHttp(dir, manifest, process.execPath, ["dist/server.js"]);
+}
+
+/** Starts the service without any keys and checks each module's endpoints answer as documented. */
+async function smokeHttp(dir, manifest, command, args) {
   const port = await freePort();
   const env = { ...process.env, PORT: String(port) };
   for (const key of SMOKE_UNSET_ENV) delete env[key];
-  const child = spawn(process.execPath, ["dist/server.js"], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(command, args, { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   child.stdout.on("data", (d) => (log += d));
   child.stderr.on("data", (d) => (log += d));
@@ -118,7 +151,7 @@ function freePort() {
 }
 
 async function waitFor(url, child, getLog) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 200; i++) {
     if (child.exitCode !== null) throw new Error(`smoke: server exited with code ${child.exitCode}\n${getLog()}`);
     try {
       await fetch(url);
@@ -127,5 +160,5 @@ async function waitFor(url, child, getLog) {
       await new Promise((r) => setTimeout(r, 100));
     }
   }
-  throw new Error(`smoke: server did not start within 10s\n${getLog()}`);
+  throw new Error(`smoke: server did not start within 20s\n${getLog()}`);
 }

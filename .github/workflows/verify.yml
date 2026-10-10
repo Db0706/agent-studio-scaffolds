@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: [next, node, python]
+        framework: [next, node, python, expo]
         combo: [base, gemini, payments, payments-spending, full]
         node: [22]
         include:
@@ -49,6 +49,9 @@ jobs:
             combo: full
             node: 20
           - framework: node
+            combo: full
+            node: 20
+          - framework: expo
             combo: full
             node: 20
           # Oldest Python and oldest Node together (a distinct `node` value makes this a new job

@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 // Composes every supported combination and checks it installs, typechecks, builds and passes its tests.
 // Node services and python agents are also started and probed over HTTP (offline: no keys, no facilitator).
+// Expo apps are checked against their SDK's expected native module versions, bundled for Android
+// (`expo export`) and scanned for secrets; their companion server gets the full node treatment.
 // Needs network access (npm registry, PyPI) but no API keys or wallets.
 // Python combinations use $PYTHON (default python3), which must be 3.10 or newer.
 //
-//   npm run verify                 # whole matrix (next + node + python)
+//   npm run verify                 # whole matrix (next + node + python + expo)
 //   npm run verify -- node         # one framework
 //   npm run verify -- full         # one combination, every framework
 //   npm run verify -- node-full    # one combination, one framework
 
 import { execSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { compose } from "./compose.mjs";
@@ -22,7 +24,7 @@ const COMBOS = {
   "payments-spending": ["payments", "spending"],
   full: ["gemini", "payments", "spending", "paidapi"],
 };
-const MATRIX = ["next", "node", "python"].flatMap((framework) =>
+const MATRIX = ["next", "node", "python", "expo"].flatMap((framework) =>
   Object.entries(COMBOS).map(([combo, modules]) => ({ framework, combo, name: `${framework}-${combo}`, modules })),
 );
 
@@ -39,24 +41,22 @@ for (const { framework, combo, name, modules } of MATRIX) {
   const steps = [];
   try {
     const manifest = compose({ framework, modules, out });
-    const run = (label, cmd) => {
-      execSync(cmd, { cwd: out, stdio: "inherit", env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } });
-      steps.push(label);
-    };
     if (framework === "python") {
+      const run = (label, cmd) => {
+        execSync(cmd, { cwd: out, stdio: "inherit", env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } });
+        steps.push(label);
+      };
       await verifyPython(out, manifest, run, steps);
       results.push({ name, ok: true, steps });
       continue;
     }
-    run("install", "npm install --no-audit --no-fund");
-    run("typecheck", "npm run typecheck");
-    run("build", "npm run build");
-    if (manifest.scripts["test:spending"]) run("test:spending", "npm run test:spending");
-    if (framework === "node") {
-      await smokeNode(out, manifest);
-      steps.push("smoke");
+    await checkProject(out, framework, manifest, steps);
+    if (manifest.companion) {
+      // The companion server is a separate project with its own install, build and tests.
+      const dir = join(out, manifest.companion.dir);
+      const companionManifest = JSON.parse(readFileSync(join(dir, "studio.manifest.json"), "utf8"));
+      await checkProject(dir, manifest.companion.framework, companionManifest, steps, "companion:");
     }
-    if (existsSync(join(out, ".env.local"))) throw new Error(".env.local must never be generated");
     results.push({ name, ok: true, steps });
   } catch (err) {
     console.error(err.message);
@@ -73,6 +73,71 @@ if (!results.length) {
   process.exit(1);
 }
 if (results.some((r) => !r.ok)) process.exit(1);
+
+async function checkProject(dir, framework, manifest, steps, prefix = "") {
+  const run = (label, cmd, env = {}) => {
+    execSync(cmd, { cwd: dir, stdio: "inherit", env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", ...env } });
+    steps.push(prefix + label);
+  };
+  run("install", "npm install --no-audit --no-fund");
+  if (framework === "expo") {
+    checkExpoVersions(dir, manifest);
+    steps.push(prefix + "sdk-versions");
+  }
+  run("typecheck", "npm run typecheck");
+  // EXPO_NO_TELEMETRY / CI keep `expo export` quiet and non-interactive.
+  run("build", "npm run build", { EXPO_NO_TELEMETRY: "1", CI: "1" });
+  if (manifest.scripts["test:spending"]) run("test:spending", "npm run test:spending");
+  if (framework === "node") {
+    await smokeNode(dir, manifest);
+    steps.push(prefix + "smoke");
+  }
+  if (framework === "expo") {
+    checkBundleHasNoSecrets(join(dir, "dist"));
+    steps.push(prefix + "no-secrets");
+  }
+  if (existsSync(join(dir, ".env.local"))) throw new Error(".env.local must never be generated");
+}
+
+/**
+ * Every pinned dependency that the Expo SDK also lists (bundledNativeModules.json in the installed
+ * `expo` package) must be inside the SDK's range. Unlike `expo install --check`, this needs no network
+ * and doesn't fail when a newer patch is published.
+ */
+function checkExpoVersions(dir, manifest) {
+  const expected = JSON.parse(readFileSync(join(dir, "node_modules/expo/bundledNativeModules.json"), "utf8"));
+  const pinned = { ...manifest.dependencies, ...manifest.devDependencies };
+  const wrong = Object.entries(pinned)
+    .filter(([name, version]) => expected[name] && !satisfies(version, expected[name]))
+    .map(([name, version]) => `${name}@${version} (SDK expects ${expected[name]})`);
+  if (wrong.length) throw new Error(`Not the versions this Expo SDK expects: ${wrong.join(", ")}`);
+  console.log(`  sdk-versions ok: ${Object.keys(pinned).filter((n) => expected[n]).length} pins match expo's bundledNativeModules.json`);
+}
+
+/** Minimal semver check for the range forms bundledNativeModules.json uses: exact, ~x.y.z, ^x.y.z. */
+function satisfies(version, range) {
+  const parse = (v) => v.replace(/^[~^]/, "").split("-")[0].split(".").map(Number);
+  const [a, b, c] = parse(version);
+  const [x, y, z] = parse(range);
+  const atLeast = a > x || (a === x && (b > y || (b === y && c >= z)));
+  if (range.startsWith("~")) return a === x && b === y && c >= z;
+  if (range.startsWith("^")) return a === x && atLeast;
+  return a === x && b === y && c === z;
+}
+
+/** Anything in an app bundle can be extracted by whoever installs it, so no secret (or secret-handling code) may be in it. */
+function checkBundleHasNoSecrets(distDir) {
+  const FORBIDDEN = ["GEMINI_API_KEY", "AGENT_PRIVATE_KEY", "@google/genai", "createKeyPairSignerFromBytes", "companion-server/src"];
+  const files = (function walk(d) {
+    return readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  })(distDir);
+  for (const file of files) {
+    const text = readFileSync(file, "latin1");
+    const hit = FORBIDDEN.find((s) => text.includes(s));
+    if (hit) throw new Error(`no-secrets: ${file} contains "${hit}"`);
+  }
+  console.log(`  no-secrets ok: ${files.length} exported files contain none of ${FORBIDDEN.join(", ")}`);
+}
 
 /**
  * Python: venv → pip install (requirements-dev.txt pulls in requirements.txt) → compileall + pyright

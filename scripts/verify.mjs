@@ -23,9 +23,14 @@ const COMBOS = {
   payments: ["payments"],
   "payments-spending": ["payments", "spending"],
   full: ["gemini", "payments", "spending", "paidapi"],
+  "full-wallet": ["gemini", "payments", "spending", "paidapi", "wallet"],
 };
+// Combinations that only some frameworks have modules for.
+const ONLY = { "full-wallet": ["next"] };
 const MATRIX = ["next", "node", "python", "expo"].flatMap((framework) =>
-  Object.entries(COMBOS).map(([combo, modules]) => ({ framework, combo, name: `${framework}-${combo}`, modules })),
+  Object.entries(COMBOS)
+    .filter(([combo]) => !ONLY[combo] || ONLY[combo].includes(framework))
+    .map(([combo, modules]) => ({ framework, combo, name: `${framework}-${combo}`, modules })),
 );
 
 // Env vars that would change what the smoke test sees. They are removed so results don't depend on the machine.
@@ -94,6 +99,11 @@ async function checkProject(dir, framework, manifest, steps, prefix = "") {
   }
   if (framework === "expo") {
     checkBundleHasNoSecrets(join(dir, "dist"));
+    steps.push(prefix + "no-secrets");
+  }
+  if (framework === "next") {
+    // Everything under .next/static is downloaded by every visitor's browser.
+    checkBundleHasNoSecrets(join(dir, ".next", "static"));
     steps.push(prefix + "no-secrets");
   }
   if (existsSync(join(dir, ".env.local"))) throw new Error(".env.local must never be generated");

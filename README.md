@@ -14,7 +14,7 @@ Composable starter templates for **Superteam Agent Studio**'s Project Builder. E
 | | `payments`: x402 V2, Solana devnet | ✅ builds; 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap | ✅ builds; offline tests pass through the real x402 client |
 | | `paidapi`: paid route + buyer page/script | ✅ builds; tested end to end up to settlement |
-| | `wallet`: visitors pay `paidapi` from their own Solana wallet (`@solana/react` + Wallet Standard) | ✅ builds, no secrets in the browser bundle; connect → sign → x402 → facilitator tested in a browser with a Wallet Standard test wallet (rejected for no funds, as expected); not tested with Phantom/Solflare/Backpack |
+| | `wallet`: visitors pay `paidapi` from their own Solana wallet (`@solana/react` + Wallet Standard) | ✅ builds, no secrets in the browser bundle; connect → sign → x402 → facilitator tested in a browser with a Wallet Standard test wallet (rejected for no funds, as expected); a real browser wallet settled a devnet payment (VERIFICATION W5) |
 | Node.js service (Express 5, TS) | `base` | ✅ builds and starts (HTTP smoke test) |
 | | `gemini`: `POST /api/chat` | ✅ builds; missing-key path tested; live call needs a key (not tested) |
 | | `payments`: x402 V2 via `@x402/express`, Solana devnet | ✅ builds; 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |

@@ -22,8 +22,8 @@ const COMBOS = {
   gemini: ["gemini"],
   payments: ["payments"],
   "payments-spending": ["payments", "spending"],
-  full: ["gemini", "payments", "spending", "paidapi"],
-  "full-wallet": ["gemini", "payments", "spending", "paidapi", "wallet"],
+  full: ["gemini", "payments", "spending", "paidapi", "paysh"],
+  "full-wallet": ["gemini", "payments", "spending", "paidapi", "paysh", "wallet"],
 };
 // Combinations that only some frameworks have modules for.
 const ONLY = { "full-wallet": ["next"] };
@@ -93,6 +93,7 @@ async function checkProject(dir, framework, manifest, steps, prefix = "") {
   // EXPO_NO_TELEMETRY / CI keep `expo export` quiet and non-interactive.
   run("build", "npm run build", { EXPO_NO_TELEMETRY: "1", CI: "1" });
   if (manifest.scripts["test:spending"]) run("test:spending", "npm run test:spending");
+  if (manifest.scripts["test:paysh"]) run("test:paysh", "npm run test:paysh");
   if (framework === "node") {
     await smokeNode(dir, manifest);
     steps.push(prefix + "smoke");

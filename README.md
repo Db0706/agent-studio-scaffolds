@@ -14,22 +14,26 @@ Composable starter templates for **Superteam Agent Studio**'s Project Builder. E
 | | `payments`: x402 V2, Solana devnet | ✅ builds; 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap | ✅ builds; offline tests pass through the real x402 client |
 | | `paidapi`: paid route + buyer page/script | ✅ builds; tested end to end up to settlement |
+| | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`npm run paysh`) | ✅ builds; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 | | `wallet`: visitors pay `paidapi` from their own Solana wallet (`@solana/react` + Wallet Standard) | ✅ builds, no secrets in the browser bundle; connect → sign → x402 → facilitator tested in a browser with a Wallet Standard test wallet (rejected for no funds, as expected); a real browser wallet settled a devnet payment (VERIFICATION W5) |
 | Node.js service (Express 5, TS) | `base` | ✅ builds and starts (HTTP smoke test) |
 | | `gemini`: `POST /api/chat` | ✅ builds; missing-key path tested; live call needs a key (not tested) |
 | | `payments`: x402 V2 via `@x402/express`, Solana devnet | ✅ builds; 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap | ✅ builds; same offline tests as Next, pass through the real x402 client |
 | | `paidapi`: `GET /premium-data` + `examples/client.ts` buyer | ✅ builds; tested end to end up to settlement |
+| | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`npm run paysh`) | ✅ builds; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 | Python autonomous agent (3.10+, FastAPI) | `base`: `python -m agent` CLI + FastAPI service | ✅ installs, typechecks (pyright), tests pass, starts (HTTP smoke test) |
 | | `gemini`: `python -m agent ask`, `POST /api/chat` | ✅ missing-key path tested; live call needs a key (not tested) |
 | | `payments`: x402 V2 via PyPI `x402` (FastAPI middleware + httpx client), Solana devnet | ✅ 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap + devnet-USDC only | ✅ same offline tests as Next/Node (plus USDG refused), pass through the real x402 client and httpx transport |
 | | `paidapi`: `GET /premium-data` + `python -m agent buy` | ✅ tested end to end up to settlement |
+| | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`python -m agent paysh`) | ✅ typechecks; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 | Expo SDK 57 (expo-router, TS, Android) | `base` | ✅ installs, matches the SDK's expected versions, typechecks, bundles for Android (`expo export`); no device run (not tested) |
 | | `gemini`: chat screen → companion `POST /api/chat` | ✅ app bundles with no secrets in it; companion builds + smoke test |
 | | `payments`: app reads prices; companion charges/pays (x402 V2, Solana devnet) | ✅ same; companion is the node `payments` module |
 | | `spending`: limits run in the companion, next to the key | ✅ companion's 8 offline tests pass |
 | | `paidapi`: Premium screen → companion `GET /premium-data`, `POST /api/buy` | ✅ app bundles; companion smoke test |
+| | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`companion-server: npm run paysh`) | ✅ companion is the node `paysh` module; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 
 [VERIFICATION.md](VERIFICATION.md) lists exactly what was tested and what wasn't. It also records the verified package versions.
 
@@ -47,7 +51,7 @@ scripts/verify.mjs          composes a matrix of combinations, then install → 
 catalog.json                `npm run catalog` output: every manifest, for the Agent Studio UI
 ```
 
-All three frameworks have the same modules: `gemini`, `payments`, `spending` (requires `payments`), `paidapi` (requires `payments` and `spending`). The logic is shared: `config.ts`, `client.ts`, the spending files, keygen/wallets and the tests are the Next versions with node-style imports (`../payments/config.js`) and without `import "server-only"`.
+All frameworks have the same modules: `gemini`, `payments`, `spending` (requires `payments`), `paidapi` (requires `payments` and `spending`), `paysh` (requires `paidapi`). The logic is shared: `config.ts`, `client.ts`, the spending files, keygen/wallets and the tests are the Next versions with node-style imports (`../payments/config.js`) and without `import "server-only"`.
 
 ### The `node` template
 
@@ -61,7 +65,7 @@ All three frameworks have the same modules: `gemini`, `payments`, `spending` (re
 - Python ≥ 3.10, plain `venv` + `pip`. Dependencies are generated into `requirements.txt` (exact `==` pins of the direct dependencies); `requirements-dev.txt` adds `pyright[nodejs]` (bundles its own Node, so students need no npm). `pyproject.toml` only holds pyright settings. Secrets come from `.env` (python-dotenv; already-set environment variables win).
 - One package, `agent/`. `python -m agent` is the command line; every file in `agent/commands/` adds commands (`register(commands)`). `python -m agent serve` runs the FastAPI app in `agent/server.py` with uvicorn on `PORT` (default 3000) and `HOST` (default `127.0.0.1`); every file in `agent/routes/` adds endpoints (`register(app)`). So modules still only add files.
 - `GET /` returns the generated `agent/modules.py` list. Tests are stdlib `unittest` in `tests/` (no pytest): `python -m unittest discover -s tests -v`.
-- Commands per module: `ask` (gemini), `keygen` / `keygen --pay-to` / `wallets` (payments), `buy [url] [-n N]` (paidapi).
+- Commands per module: `ask` (gemini), `keygen` / `keygen --pay-to` / `wallets` (payments), `buy [url] [-n N]` (paidapi), `paysh [url] [--sandbox] [--wallet] [--listing TEAM]` (paysh).
 - Payments: `@paid_route(app, "GET", "/premium-data", lambda: PaidRouteOptions(price=…, description=…))` in `agent/payments/server.py` registers the FastAPI route *and* its x402 price in one call (so they can't drift apart, unlike node's string), and builds the x402 FastAPI middleware on the first paid request. It runs the facilitator's `/supported` call in a thread and returns 502 (retried next request) if it fails, instead of x402's default of blocking the event loop and exiting the process on a fatal init error.
 - The x402 Python SDK names differ from TypeScript: `x402Client.on_before_payment_creation`, `set_spend_controls({"max_amount_per_payment": "$0.10"})`, `x402HttpxClient`, `payment_middleware` (FastAPI), `KeypairSigner` (solders). See VERIFICATION.md.
 

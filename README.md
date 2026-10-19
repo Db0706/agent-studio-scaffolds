@@ -34,6 +34,7 @@ Composable starter templates for **Superteam Agent Studio**'s Project Builder. E
 | | `spending`: limits run in the companion, next to the key | ✅ companion's 8 offline tests pass |
 | | `paidapi`: Premium screen → companion `GET /premium-data`, `POST /api/buy` | ✅ app bundles; companion smoke test |
 | | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`companion-server: npm run paysh`) | ✅ companion is the node `paysh` module; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
+| | `wallet`: pay `paidapi` from a wallet app on the phone (Solana Mobile Wallet Adapter, `@solana/kit` signer + x402 in the app) | ✅ installs, typechecks, bundles; app source loads no keys; development build tested on the Android emulator with Solana Mobile's fakewallet: connect → sign → x402 → facilitator (rejected for no funds, as expected) (VERIFICATION E9–E11) |
 
 [VERIFICATION.md](VERIFICATION.md) lists exactly what was tested and what wasn't. It also records the verified package versions.
 

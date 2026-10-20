@@ -20,10 +20,12 @@ import { compose } from "./compose.mjs";
 const COMBOS = {
   base: [],
   gemini: ["gemini"],
+  race: ["race"],
+  "race-gemini": ["race", "gemini"],
   payments: ["payments"],
   "payments-spending": ["payments", "spending"],
-  full: ["gemini", "payments", "spending", "paidapi", "paysh"],
-  "full-wallet": ["gemini", "payments", "spending", "paidapi", "paysh", "wallet"],
+  full: ["gemini", "race", "payments", "spending", "paidapi", "paysh"],
+  "full-wallet": ["gemini", "race", "payments", "spending", "paidapi", "paysh", "wallet"],
 };
 // Combinations that only some frameworks have modules for.
 const ONLY = { "full-wallet": ["next", "expo"] };
@@ -34,7 +36,9 @@ const MATRIX = ["next", "node", "python", "expo"].flatMap((framework) =>
 );
 
 // Env vars that would change what the smoke test sees. They are removed so results don't depend on the machine.
-const SMOKE_UNSET_ENV = ["GEMINI_API_KEY", "PAY_TO_ADDRESS", "AGENT_PRIVATE_KEY", "X402_NETWORK", "X402_FACILITATOR_URL"];
+const SMOKE_UNSET_ENV = ["GEMINI_API_KEY", "PAY_TO_ADDRESS", "AGENT_PRIVATE_KEY", "X402_NETWORK", "X402_FACILITATOR_URL", "AGENT_STUDIO_VERIFIER_TOKEN"];
+// The race adapter is smoke-tested with this token, the way the race verifier would call it.
+const SMOKE_VERIFIER_TOKEN = "smoke-verifier-token-0123456789";
 
 const only = process.argv.slice(2);
 const results = [];
@@ -94,6 +98,7 @@ async function checkProject(dir, framework, manifest, steps, prefix = "") {
   run("build", "npm run build", { EXPO_NO_TELEMETRY: "1", CI: "1" });
   if (manifest.scripts["test:spending"]) run("test:spending", "npm run test:spending");
   if (manifest.scripts["test:paysh"]) run("test:paysh", "npm run test:paysh");
+  if (manifest.scripts["test:race"]) run("test:race", "npm run test:race");
   if (framework === "node") {
     await smokeNode(dir, manifest);
     steps.push(prefix + "smoke");
@@ -204,6 +209,7 @@ async function smokeHttp(dir, manifest, command, args) {
   const port = await freePort();
   const env = { ...process.env, PORT: String(port) };
   for (const key of SMOKE_UNSET_ENV) delete env[key];
+  if (manifest.modules.includes("race")) env.AGENT_STUDIO_VERIFIER_TOKEN = SMOKE_VERIFIER_TOKEN;
   const child = spawn(command, args, { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   child.stdout.on("data", (d) => (log += d));
@@ -227,6 +233,17 @@ async function smokeHttp(dir, manifest, command, args) {
       await expect("POST /api/chat (empty)", await post("{}"), 400);
       await expect("POST /api/chat (malformed JSON)", await post("{"), 400);
       await expect("POST /api/chat (no key)", await post('{"prompt":"hi"}'), 500, (b) => /GEMINI_API_KEY is not set/.test(b?.error));
+    }
+    if (manifest.modules.includes("race")) {
+      const auth = { authorization: `Bearer ${SMOKE_VERIFIER_TOKEN}` };
+      const task = (headers, body) => fetch(`${base}/agent-studio/v1/tasks`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+      const nonce = "smoke-nonce-0123456789abcdef";
+      await expect("GET /agent-studio/v1/health (no token)", await fetch(`${base}/agent-studio/v1/health`), 401);
+      await expect("GET /agent-studio/v1/health", await fetch(`${base}/agent-studio/v1/health`, { headers: auth }), 200, (b) => b?.protocol === "asrp/1" && b?.status === "ready");
+      await expect("POST /agent-studio/v1/tasks (wrong token)", await task({ authorization: "Bearer nope" }, { nonce, task: { type: "respond", input: "hi" } }), 401, (b) => b?.error?.code === "unauthorized");
+      await expect("POST /agent-studio/v1/tasks (malformed)", await task(auth, { nonce, task: { type: "dance" } }), 400, (b) => b?.error?.code === "invalid_input" && b?.nonce === nonce);
+      await expect("POST /agent-studio/v1/tasks (respond not built yet)", await task(auth, { protocol: "asrp/1", nonce, attempt: { id: "s", layer: "l", number: 1 }, task: { type: "respond", input: "hi" } }), 500, (b) => b?.status === "error" && b?.nonce === nonce && /yet/.test(b?.error?.message));
+      await expect("GET /race", await fetch(`${base}/race`), 200, (b) => b?.verifierToken === "set" && b?.taskTypes?.respond === "not built yet");
     }
     if (manifest.modules.includes("paidapi")) {
       await expect("GET /premium-data (no PAY_TO_ADDRESS)", await fetch(`${base}/premium-data`), 500, (b) => /PAY_TO_ADDRESS is not set/.test(b?.error));

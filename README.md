@@ -16,18 +16,21 @@ Composable starter templates for **Superteam Agent Studio**'s Project Builder. E
 | | `paidapi`: paid route + buyer page/script | ✅ builds; tested end to end up to settlement |
 | | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`npm run paysh`) | ✅ builds; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 | | `wallet`: visitors pay `paidapi` from their own Solana wallet (`@solana/react` + Wallet Standard) | ✅ builds, no secrets in the browser bundle; connect → sign → x402 → facilitator tested in a browser with a Wallet Standard test wallet (rejected for no funds, as expected); a real browser wallet settled a devnet payment (VERIFICATION W5) |
+| | `race`: AI Race adapter, `GET /agent-studio/v1/health` + `POST /agent-studio/v1/tasks` (ASRP/1), `/race` readiness page, `npm run race:try` | ✅ builds; offline protocol tests pass (VERIFICATION R1) |
 | Node.js service (Express 5, TS) | `base` | ✅ builds and starts (HTTP smoke test) |
 | | `gemini`: `POST /api/chat` | ✅ builds; missing-key path tested; live call needs a key (not tested) |
 | | `payments`: x402 V2 via `@x402/express`, Solana devnet | ✅ builds; 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap | ✅ builds; same offline tests as Next, pass through the real x402 client |
 | | `paidapi`: `GET /premium-data` + `examples/client.ts` buyer | ✅ builds; tested end to end up to settlement |
 | | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`npm run paysh`) | ✅ builds; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
+| | `race`: AI Race adapter (ASRP/1), `GET /race`, `npm run race:try` | ✅ builds; offline protocol tests + HTTP smoke test pass; passed the real race verifier's layer 1 with a written `respond` (VERIFICATION R1 to R3) |
 | Python autonomous agent (3.10+, FastAPI) | `base`: `python -m agent` CLI + FastAPI service | ✅ installs, typechecks (pyright), tests pass, starts (HTTP smoke test) |
 | | `gemini`: `python -m agent ask`, `POST /api/chat` | ✅ missing-key path tested; live call needs a key (not tested) |
 | | `payments`: x402 V2 via PyPI `x402` (FastAPI middleware + httpx client), Solana devnet | ✅ 402 flow tested against the live x402.org facilitator; settlement needs funded devnet wallets (not tested) |
 | | `spending`: budget + per-payment cap + devnet-USDC only | ✅ same offline tests as Next/Node (plus USDG refused), pass through the real x402 client and httpx transport |
 | | `paidapi`: `GET /premium-data` + `python -m agent buy` | ✅ tested end to end up to settlement |
 | | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`python -m agent paysh`) | ✅ typechecks; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
+| | `race`: AI Race adapter (ASRP/1), `GET /race`, `python -m agent race` | ✅ typechecks; offline protocol tests + HTTP smoke test pass (VERIFICATION R1, R2) |
 | Expo SDK 57 (expo-router, TS, Android) | `base` | ✅ installs, matches the SDK's expected versions, typechecks, bundles for Android (`expo export`); no device run (not tested) |
 | | `gemini`: chat screen → companion `POST /api/chat` | ✅ app bundles with no secrets in it; companion builds + smoke test |
 | | `payments`: app reads prices; companion charges/pays (x402 V2, Solana devnet) | ✅ same; companion is the node `payments` module |
@@ -35,6 +38,7 @@ Composable starter templates for **Superteam Agent Studio**'s Project Builder. E
 | | `paidapi`: Premium screen → companion `GET /premium-data`, `POST /api/buy` | ✅ app bundles; companion smoke test |
 | | `paysh`: pay `paidapi` with the Pay.sh `pay` CLI, `pay claude`, and a catalog listing (`companion-server: npm run paysh`) | ✅ companion is the node `paysh` module; offline tests pass; `pay` 0.29.0 sends a valid x402 V2 devnet payment to `paidapi` (VERIFICATION PS1–PS4) |
 | | `wallet`: pay `paidapi` from a wallet app on the phone (Solana Mobile Wallet Adapter, `@solana/kit` signer + x402 in the app) | ✅ installs, typechecks, bundles; app source loads no keys; development build tested on the Android emulator with Solana Mobile's fakewallet: connect → sign → x402 → facilitator (rejected for no funds, as expected) (VERIFICATION E9–E11) |
+| | `race`: Race readiness screen; the companion server runs the node `race` adapter | ✅ app bundles; companion's offline protocol tests + smoke test pass (VERIFICATION R1, R2) |
 
 [VERIFICATION.md](VERIFICATION.md) lists exactly what was tested and what wasn't. It also records the verified package versions.
 
@@ -52,7 +56,7 @@ scripts/verify.mjs          composes a matrix of combinations, then install → 
 catalog.json                `npm run catalog` output: every manifest, for the Agent Studio UI
 ```
 
-All frameworks have the same modules: `gemini`, `payments`, `spending` (requires `payments`), `paidapi` (requires `payments` and `spending`), `paysh` (requires `paidapi`). The logic is shared: `config.ts`, `client.ts`, the spending files, keygen/wallets and the tests are the Next versions with node-style imports (`../payments/config.js`) and without `import "server-only"`.
+All frameworks have the same modules: `gemini`, `race` (the AI Race adapter), `payments`, `spending` (requires `payments`), `paidapi` (requires `payments` and `spending`), `paysh` (requires `paidapi`). The logic is shared: `config.ts`, `client.ts`, the spending files, keygen/wallets and the tests are the Next versions with node-style imports (`../payments/config.js`) and without `import "server-only"`.
 
 ### The `node` template
 

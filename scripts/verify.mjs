@@ -26,7 +26,7 @@ const COMBOS = {
   "full-wallet": ["gemini", "payments", "spending", "paidapi", "paysh", "wallet"],
 };
 // Combinations that only some frameworks have modules for.
-const ONLY = { "full-wallet": ["next"] };
+const ONLY = { "full-wallet": ["next", "expo"] };
 const MATRIX = ["next", "node", "python", "expo"].flatMap((framework) =>
   Object.entries(COMBOS)
     .filter(([combo]) => !ONLY[combo] || ONLY[combo].includes(framework))
@@ -99,7 +99,12 @@ async function checkProject(dir, framework, manifest, steps, prefix = "") {
     steps.push(prefix + "smoke");
   }
   if (framework === "expo") {
-    checkBundleHasNoSecrets(join(dir, "dist"));
+    // With Wallet Connection the app bundles @solana/kit on purpose (the user's wallet app signs), and
+    // Metro keeps unused library functions, so kit's key loader is in the bundle without being used.
+    // The app's own code must still never load a key: checkAppSourceLoadsNoKeys covers that.
+    const walletBundlesKit = manifest.modules.includes("wallet");
+    checkBundleHasNoSecrets(join(dir, "dist"), walletBundlesKit ? ["createKeyPairSignerFromBytes"] : []);
+    if (walletBundlesKit) checkAppSourceLoadsNoKeys(dir);
     steps.push(prefix + "no-secrets");
   }
   if (framework === "next") {
@@ -137,8 +142,8 @@ function satisfies(version, range) {
 }
 
 /** Anything in an app bundle can be extracted by whoever installs it, so no secret (or secret-handling code) may be in it. */
-function checkBundleHasNoSecrets(distDir) {
-  const FORBIDDEN = ["GEMINI_API_KEY", "AGENT_PRIVATE_KEY", "@google/genai", "createKeyPairSignerFromBytes", "companion-server/src"];
+function checkBundleHasNoSecrets(distDir, allowed = []) {
+  const FORBIDDEN = ["GEMINI_API_KEY", "AGENT_PRIVATE_KEY", "@google/genai", "createKeyPairSignerFromBytes", "companion-server/src"].filter((s) => !allowed.includes(s));
   const files = (function walk(d) {
     return readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
   })(distDir);
@@ -148,6 +153,23 @@ function checkBundleHasNoSecrets(distDir) {
     if (hit) throw new Error(`no-secrets: ${file} contains "${hit}"`);
   }
   console.log(`  no-secrets ok: ${files.length} exported files contain none of ${FORBIDDEN.join(", ")}`);
+}
+
+/** The Expo app's own code (not node_modules or the companion) never creates a signer from key bytes. */
+function checkAppSourceLoadsNoKeys(dir) {
+  const FORBIDDEN = ["createKeyPairSignerFromBytes", "createKeyPairFromBytes", "AGENT_PRIVATE_KEY", "getBase58Encoder().encode"];
+  const files = ["app", "lib", "components"].flatMap((top) =>
+    existsSync(join(dir, top))
+      ? (function walk(d) {
+          return readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+        })(join(dir, top))
+      : [],
+  );
+  for (const file of files) {
+    const hit = FORBIDDEN.find((s) => readFileSync(file, "utf8").includes(s));
+    if (hit) throw new Error(`no-secrets: ${file} contains "${hit}": the app must never load a key, the wallet app signs`);
+  }
+  console.log(`  app source ok: ${files.length} files load no keys`);
 }
 
 /**

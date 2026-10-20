@@ -44,8 +44,11 @@ jobs:
           # Python combinations run on 3.12; the oldest supported Python (3.10) runs `full` below.
           - framework: python
             python: "3.12"
-          # Wallet Connection exists for next only (it requires paidapi, so it runs on top of `full`).
+          # Wallet Connection exists for next and expo (it requires paidapi, so it runs on top of `full`).
           - framework: next
+            combo: full-wallet
+            node: 22
+          - framework: expo
             combo: full-wallet
             node: 22
           # Oldest supported Node, on the combination that exercises everything.

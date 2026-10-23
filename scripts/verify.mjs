@@ -98,6 +98,7 @@ async function checkProject(dir, framework, manifest, steps, prefix = "") {
   run("build", "npm run build", { EXPO_NO_TELEMETRY: "1", CI: "1" });
   if (manifest.scripts["test:spending"]) run("test:spending", "npm run test:spending");
   if (manifest.scripts["test:paysh"]) run("test:paysh", "npm run test:paysh");
+  if (manifest.scripts["test:transfer"]) run("test:transfer", "npm run test:transfer");
   if (manifest.scripts["test:race"]) run("test:race", "npm run test:race");
   if (framework === "node") {
     await smokeNode(dir, manifest);
